@@ -1,18 +1,31 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Editor from "@monaco-editor/react";
 import { runCode } from "../api/codeoffApi";
 
+// 🔒 LocalStorage key so each user keeps their own draft
+const LS_KEY = "codeoff-battle-code";
+
 export default function BattlePage() {
-  const [code, setCode] = useState("# Write your code here\nprint('Hello CodeOff')");
+  // 🟢 Load code from localStorage on first render, or fall back to a template
+  const [code, setCode] = useState(() =>
+    localStorage.getItem(LS_KEY) || `# Write your code here
+print('Hello CodeOff')`
+  );
   const [output, setOutput] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handleRun = async () => {
+  // 💾 Persist code after the user stops typing (300 ms debounce)
+  useEffect(() => {
+    const t = setTimeout(() => localStorage.setItem(LS_KEY, code), 300);
+    return () => clearTimeout(t);
+  }, [code]);
+
+  const handleRun = useCallback(async () => {
     setLoading(true);
     const res = await runCode(code);
     setOutput(res.stdout || res.stderr || "(no output)");
     setLoading(false);
-  };
+  }, [code]);
 
   return (
     <div className="p-4 grid gap-4 md:grid-cols-2">
@@ -30,7 +43,7 @@ export default function BattlePage() {
         >
           {loading ? "Running…" : "Run"}
         </button>
-        <pre className="bg-gray-800 p-4 rounded flex-1 overflow-auto">
+        <pre className="bg-gray-800 p-4 rounded flex-1 overflow-auto whitespace-pre-wrap">
           {output}
         </pre>
       </div>
