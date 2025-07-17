@@ -14,7 +14,7 @@ print('Hello CodeOff')`
   const [output, setOutput] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // 💾 Persist code after the user stops typing (300 ms debounce)
+  // 💾 Persist code after the user stops typing (300ms debounce)
   useEffect(() => {
     const t = setTimeout(() => localStorage.setItem(LS_KEY, code), 300);
     return () => clearTimeout(t);
@@ -23,7 +23,7 @@ print('Hello CodeOff')`
   const handleRun = useCallback(async () => {
     setLoading(true);
     const res = await runCode(code);
-    setOutput(res.stdout || res.stderr || "(no output)");
+    setOutput(res || "(no output)");
     setLoading(false);
   }, [code]);
 

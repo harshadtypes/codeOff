@@ -16,7 +16,7 @@ app.post("/run", async (req, res) => {
   const { source_code, language_id } = req.body;
 
   try {
-    // 1. Create submission
+    // 1. Submit code
     const submissionRes = await axios.post(
       `https://${JUDGE0_HOST}/submissions?base64_encoded=false&wait=false`,
       {
@@ -34,26 +34,35 @@ app.post("/run", async (req, res) => {
 
     const { token } = submissionRes.data;
 
-    // 2. Poll for result (simple 2s delay)
-    setTimeout(async () => {
-      const resultRes = await axios.get(
-        `https://${JUDGE0_HOST}/submissions/${token}?base64_encoded=false`,
-        {
+    // 2. Poll once after delay (wrap polling in its own function)
+    setTimeout(() => {
+      axios
+        .get(`https://${JUDGE0_HOST}/submissions/${token}?base64_encoded=false`, {
           headers: {
             "X-RapidAPI-Key": RAPIDAPI_KEY,
             "X-RapidAPI-Host": JUDGE0_HOST,
           },
-        }
-      );
-      res.json(resultRes.data);
+        })
+        .then((resultRes) => {
+          const result = resultRes.data;
+          const output =
+            result.stdout || result.stderr || result.compile_output || "No output.";
+          console.log("✅ Sending back:", output);
+          res.json({ output: output.trim() });
+        })
+        .catch((pollError) => {
+          console.error("❌ Polling error:", pollError);
+          res.status(500).json({ error: "Failed to fetch execution result" });
+        });
     }, 2000);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Judge0 error" });
+    console.error("❌ Submission error:", err);
+    res.status(500).json({ error: "Code submission failed" });
   }
 });
 
+
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
-  console.log(`CodeOff backend running on port ${PORT}`);
+    console.log(`CodeOff backend running on port ${PORT}`);
 });

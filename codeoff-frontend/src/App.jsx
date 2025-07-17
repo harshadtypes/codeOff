@@ -1,16 +1,33 @@
-import { Routes, Route } from "react-router-dom";
-import LandingPage from "./pages/LandingPage";
+import { useAuth } from "./context/AuthContext";
+import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import BattlePage from "./pages/BattlePage";
-import Navbar from "./components/Navbar";
+import LoginPage from "./pages/LoginPage";
+import RegisterPage from "./pages/RegisterPage";
+import ForgotPasswordPage from "./pages/ForgotPasswordPage";
+import LandingPage from "./pages/LandingPage";
 
-export default function App() {
+function ProtectedRoute({ children }) {
+  const { user, loading } = useAuth();
+  if (loading) return <div className="text-center mt-10">Loading...</div>;
+  return user ? children : <Navigate to="/login" />;
+}
+
+function App() {
   return (
-    <div className="min-h-screen flex flex-col">
-      <Navbar />
+    <Router>
       <Routes>
         <Route path="/" element={<LandingPage />} />
-        <Route path="/battle" element={<BattlePage />} />
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
+        <Route path="/forgot" element={<ForgotPasswordPage />} />
+        <Route path="/battle" element={
+          <ProtectedRoute>
+            <BattlePage />
+          </ProtectedRoute>
+        } />
       </Routes>
-    </div>
+    </Router>
   );
 }
+
+export default App;
