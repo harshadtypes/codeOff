@@ -20,6 +20,7 @@ function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/forgot" element={<ForgotPasswordPage />} />
+        <Route path="/landing" element={<LandingPage />} />
         <Route path="/battle" element={
           <ProtectedRoute>
             <BattlePage />
