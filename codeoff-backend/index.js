@@ -54,7 +54,7 @@ app.post("/run", async (req, res) => {
           console.error("❌ Polling error:", pollError);
           res.status(500).json({ error: "Failed to fetch execution result" });
         });
-    }, 2000);
+    }, 2000); 
   } catch (err) {
     console.error("❌ Submission error:", err);
     res.status(500).json({ error: "Code submission failed" });

@@ -1,27 +1,25 @@
 import {useState, useEffect, useCallback} from "react";
 import Editor from "@monaco-editor/react";
 import {runCode} from "../api/codeoffApi";
+import {useSharedCode} from "../hooks/useSharedCode";
+import { useLocation } from "react-router-dom";
+
 
 const LS_KEY = "codeoff-battle-code";
 
 export default function BattlePage() {
-    const [code, setCode] = useState(
-        () =>
-            localStorage.getItem(LS_KEY) ||
-            `# Write your code here\nprint('Hello CodeOff')`
-    );
+    const location = useLocation();
+    const roomId = location?.state?.roomId || "default-room";
+    const [code, setCode] = useSharedCode(roomId);
+
     const [output, setOutput] = useState("");
     const [loading, setLoading] = useState(false);
 
     const [timer, setTimer] = useState(null);
     const [matchFound, setMatchFound] = useState(false);
-    const [roomId] = useState(null);
+    // const [roomId] = useState(null);
 
-    // 💾 Save code to localStorage
-    useEffect(() => {
-        const t = setTimeout(() => localStorage.setItem(LS_KEY, code), 300);
-        return () => clearTimeout(t);
-    }, [code]);
+
 
     // useEffect(() => {
     //     const user = auth.currentUser;

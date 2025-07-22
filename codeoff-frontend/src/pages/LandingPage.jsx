@@ -6,8 +6,9 @@ import {
     sendChallenge,
     acceptChallenge,
 } from "../api/matchmaking";
-import { joinQueue } from "../api/matchmaking";
-
+import {joinQueue} from "../api/matchmaking";
+import {database} from "../firebase";
+import {ref, onChildAdded, set as dbSet} from "firebase/database";
 
 export default function LandingPage() {
     const [challenges, setChallenges] = useState([]);
@@ -20,14 +21,27 @@ export default function LandingPage() {
     const snackbarTimeoutRef = useRef(null);
 
     useEffect(() => {
-        if (!user || showLogoutView) return;
+        if (!user) return;
 
-        const unsubscribe = listenForChallenges(user.uid, (challenge) => {
+        const roomsRef = ref(database, "rooms/");
+        const unsub = onChildAdded(roomsRef, (snap) => {
+            const room = snap.val();
+            if (room?.players?.[user.uid] && !room.entered) {
+                // Avoid redirecting more than once
+                dbSet(ref(database, `rooms/${room.roomId}/entered`), true);
+                navigate("/battle", {state: {roomId: room.roomId}});
+            }
+        });
+
+        const unsubChallenge = listenForChallenges(user.uid, (challenge) => {
             setChallenges((prev) => [...prev, challenge]);
         });
 
-        return () => unsubscribe();
-    }, [user, showLogoutView]);
+        return () => {
+            unsub(); // cleanup
+            if (unsubChallenge) unsubChallenge(); // cleanup if unsub function returned
+        };
+    }, [user, navigate]);
 
     const handleStartBattle = () => {
         let searching = true;
@@ -50,9 +64,13 @@ export default function LandingPage() {
 
     const handleSendChallenge = async () => {
         if (!friendId || !user) return;
-        await sendChallenge(friendId, user.uid, user.email);
-        alert("Challenge sent!");
-        setFriendId("");
+        try {
+            await sendChallenge(friendId, user.uid, user.email);
+            alert("Challenge sent!");
+            setFriendId("");
+        } catch (err) {
+            alert(err.message || "Failed to send challenge.");
+        }
     };
 
     const handleAcceptChallenge = async (challenge) => {

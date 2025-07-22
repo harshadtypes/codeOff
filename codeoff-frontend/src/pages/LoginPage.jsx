@@ -33,7 +33,7 @@ export default function LoginPage() {
         }
         loginEmail = snap.val().email; // ✅ Access email property
       } catch (err) {
-        setMessage("❌ Error fetching username.");
+        setMessage("❌ Error fetching username.", err);
         return;
       }
     }
