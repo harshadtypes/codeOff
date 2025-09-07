@@ -1,14 +1,15 @@
 import React, {useState, useEffect, useRef} from "react";
 import {useNavigate} from "react-router-dom";
-import {auth} from "../firebase"; // adjust path if needed
+import {auth} from "../firebase";
 import {
     listenForChallenges,
     sendChallenge,
     acceptChallenge,
+    joinQueue,
 } from "../api/matchmaking";
-import {joinQueue} from "../api/matchmaking";
 import {database} from "../firebase";
 import {ref, onChildAdded, set as dbSet} from "firebase/database";
+import { motion } from "framer-motion";
 
 export default function LandingPage() {
     const [challenges, setChallenges] = useState([]);
@@ -16,9 +17,9 @@ export default function LandingPage() {
     const [showLogoutView, setShowLogoutView] = useState(false);
     const [loggedOutEmail, setLoggedOutEmail] = useState(null);
     const [showSnackbar, setShowSnackbar] = useState(false);
+    const snackbarTimeoutRef = useRef(null);
     const navigate = useNavigate();
     const user = auth.currentUser;
-    const snackbarTimeoutRef = useRef(null);
 
     useEffect(() => {
         if (!user) return;
@@ -27,7 +28,6 @@ export default function LandingPage() {
         const unsub = onChildAdded(roomsRef, (snap) => {
             const room = snap.val();
             if (room?.players?.[user.uid] && !room.entered) {
-                // Avoid redirecting more than once
                 dbSet(ref(database, `rooms/${room.roomId}/entered`), true);
                 navigate("/battle", {state: {roomId: room.roomId}});
             }
@@ -38,15 +38,14 @@ export default function LandingPage() {
         });
 
         return () => {
-            unsub(); // cleanup
-            if (unsubChallenge) unsubChallenge(); // cleanup if unsub function returned
+            unsub();
+            if (unsubChallenge) unsubChallenge();
         };
     }, [user, navigate]);
 
     const handleStartBattle = () => {
         let searching = true;
-
-        const _cancel = joinQueue(
+        joinQueue(
             ({roomId, opponent}) => {
                 searching = false;
                 navigate("/battle", {state: {roomId, opponent}});
@@ -55,9 +54,7 @@ export default function LandingPage() {
                 console.log("⏳ Searching…", seconds, "seconds");
             },
             ({roomId, opponent}) => {
-                if (searching) {
-                    navigate("/battle", {state: {roomId, opponent}});
-                }
+                if (searching) navigate("/battle", {state: {roomId, opponent}});
             }
         );
     };
@@ -66,10 +63,10 @@ export default function LandingPage() {
         if (!friendId || !user) return;
         try {
             await sendChallenge(friendId, user.uid, user.email);
-            alert("Challenge sent!");
+            alert("✅ Challenge sent!");
             setFriendId("");
         } catch (err) {
-            alert(err.message || "Failed to send challenge.");
+            alert(err.message || "❌ Failed to send challenge.");
         }
     };
 
@@ -91,7 +88,6 @@ export default function LandingPage() {
             setLoggedOutEmail(emailBeforeLogout);
             setShowLogoutView(true);
             setShowSnackbar(true);
-
             if (snackbarTimeoutRef.current)
                 clearTimeout(snackbarTimeoutRef.current);
             snackbarTimeoutRef.current = setTimeout(
@@ -103,9 +99,6 @@ export default function LandingPage() {
         }
     };
 
-    const goToLogin = () => navigate("/login");
-
-    // ✅ Snackbar component
     const Snackbar = () =>
         showSnackbar && (
             <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-green-600 text-white px-4 py-2 rounded shadow-lg z-50">
@@ -124,8 +117,8 @@ export default function LandingPage() {
                 <h2 className="text-2xl">✅ You've been logged out</h2>
                 <p className="text-lg">👋 Bye {loggedOutEmail}</p>
                 <button
-                    onClick={goToLogin}
-                    className="bg-blue-500 px-4 py-2 rounded hover:bg-blue-600">
+                    onClick={() => navigate("/login")}
+                    className="bg-blue-600 px-4 py-2 rounded hover:bg-blue-500">
                     🔐 Go to Login
                 </button>
                 <Snackbar />
@@ -134,66 +127,88 @@ export default function LandingPage() {
     }
 
     return (
-        <div className="p-6 space-y-6 max-w-xl mx-auto">
-            <div className="flex justify-between items-center">
-                <h1 className="text-3xl font-bold">
-                    Welcome, {user?.displayName || user?.email}
-                </h1>
-                <button
-                    onClick={handleLogout}
-                    className="bg-red-600 text-white px-3 py-1 rounded">
-                    🚪 Logout
-                </button>
-            </div>
-
-            <div className="space-y-4">
-                <button
-                    onClick={handleStartBattle}
-                    className="bg-blue-600 text-white px-4 py-2 rounded w-full">
-                    🔄 Start Random Battle
-                </button>
-
-                <div className="bg-gray-800 p-4 rounded">
-                    <h2 className="text-xl mb-2">Challenge a Friend</h2>
-                    <input
-                        value={friendId}
-                        onChange={(e) => setFriendId(e.target.value)}
-                        placeholder="Enter friend user ID"
-                        className="w-full p-2 mb-2 rounded bg-gray-900 text-white"
-                    />
-                    <button
-                        onClick={handleSendChallenge}
-                        className="bg-purple-600 text-white px-4 py-2 rounded w-full">
-                        🎯 Send Challenge
-                    </button>
-                </div>
-
-                <div className="bg-gray-700 p-4 rounded">
-                    <h2 className="text-xl mb-2">Incoming Challenges</h2>
-                    {challenges.length === 0 && (
-                        <p className="text-sm text-gray-400">
-                            No challenges yet
-                        </p>
-                    )}
-                    {challenges.map((challenge, idx) => (
-                        <div
-                            key={idx}
-                            className="flex justify-between items-center bg-gray-600 p-2 rounded mb-2">
-                            <div>
-                                <strong>{challenge.challengerEmail}</strong>{" "}
-                                challenged you
-                            </div>
+        <motion.div
+            className="min-h-screen bg-gray-900 text-white p-8"
+            initial={{opacity: 0, y: 50}}
+            animate={{opacity: 1, y: 0}}
+            exit={{opacity: 0, y: -50}}
+            transition={{duration: 0.4}}>
+            <div className="min-h-screen bg-gray-900 text-white p-6">
+                <div className="bg-gray-950 p-8 rounded-2xl shadow-2xl text-white">
+                    <div className="max-w-2xl mx-auto space-y-6">
+                        <div className="flex justify-between items-center mb-4">
+                            <h1 className="text-3xl font-bold">
+                                Welcome, {user?.displayName || user?.email}
+                            </h1>
                             <button
-                                onClick={() => handleAcceptChallenge(challenge)}
-                                className="bg-green-500 text-white px-3 py-1 rounded">
-                                Accept
+                                onClick={handleLogout}
+                                className="bg-red-600 hover:bg-red-500 px-4 py-2 rounded">
+                                Logout
                             </button>
                         </div>
-                    ))}
+
+                        <button
+                            onClick={handleStartBattle}
+                            className="w-full bg-blue-600 hover:bg-blue-500 text-white py-3 rounded text-lg font-semibold">
+                            🔄 Start Random Battle
+                        </button>
+
+                        <div className="bg-gray-800 p-6 rounded-lg shadow-md">
+                            <h2 className="text-xl font-semibold mb-3">
+                                🎯 Challenge a Friend
+                            </h2>
+                            <input
+                                value={friendId}
+                                onChange={(e) => setFriendId(e.target.value)}
+                                placeholder="Enter friend's username"
+                                className="w-full p-3 mb-3 rounded bg-gray-900 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                            />
+                            <button
+                                onClick={handleSendChallenge}
+                                className="w-full bg-purple-600 hover:bg-purple-500 text-white py-2 rounded">
+                                Send Challenge
+                            </button>
+                        </div>
+
+                        <div className="bg-gray-800 p-6 rounded-lg shadow-md">
+                            <h2 className="text-xl font-semibold mb-4">
+                                📨 Incoming Challenges
+                            </h2>
+                            {challenges.length === 0 ? (
+                                <p className="text-gray-400">
+                                    No challenges yet
+                                </p>
+                            ) : (
+                                <div className="space-y-3">
+                                    {challenges.map((challenge, idx) => (
+                                        <div
+                                            key={idx}
+                                            className="bg-gray-700 p-4 rounded flex justify-between items-center">
+                                            <div>
+                                                <strong>
+                                                    {challenge.challengerEmail}
+                                                </strong>{" "}
+                                                challenged you
+                                            </div>
+                                            <button
+                                                onClick={() =>
+                                                    handleAcceptChallenge(
+                                                        challenge
+                                                    )
+                                                }
+                                                className="bg-green-600 hover:bg-green-500 px-3 py-1 rounded text-white">
+                                                Accept
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        <Snackbar />
+                    </div>
                 </div>
             </div>
-
-            <Snackbar />
-        </div>
+        </motion.div>
     );
 }

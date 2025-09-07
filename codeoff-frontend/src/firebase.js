@@ -3,14 +3,14 @@ import { getAuth, updateProfile } from "firebase/auth";
 import { getDatabase } from "firebase/database";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyA3y_1n6SpDD2tR1SpTI2L2BoRyYfQvtwE",
-  authDomain: "codeoff-61382.firebaseapp.com",
-  projectId: "codeoff-61382",
-  storageBucket: "codeoff-61382.firebasestorage.app",
-  messagingSenderId: "597340905549",
-  appId: "1:597340905549:web:c78b4d004772ed27873c04",
-  measurementId: "G-QPFGLZVLRP",
-  databaseURL: "https://codeoff-61382-default-rtdb.asia-southeast1.firebasedatabase.app"
+  apiKey: "AIzaSyBJbI3RJaeOBMrOtkdFPEPxlFSmF8uEXys",
+  authDomain: "code-off-6a8f8.firebaseapp.com",
+  projectId: "code-off-6a8f8",
+  storageBucket: "code-off-6a8f8.firebasestorage.app",
+  messagingSenderId: "503562280000",
+  appId: "1:503562280000:web:9af9cc7423c6f69aa393a5",
+  measurementId: "G-EJKDVBTYQR",
+  databaseURL: "https://code-off-6a8f8-default-rtdb.asia-southeast1.firebasedatabase.app/"
 };
 
 const app = initializeApp(firebaseConfig);
