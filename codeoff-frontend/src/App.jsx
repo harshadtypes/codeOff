@@ -28,13 +28,19 @@ function App() {
                     <Route path="/register" element={<RegisterPage />} />
                     <Route path="/forgot" element={<ForgotPasswordPage />} />
                     <Route path="/landing" element={<LandingPage />} />
+                    {/* Updated route to include roomId parameter */}
                     <Route
-                        path="/battle"
+                        path="/battle/:roomId"
                         element={
                             <ProtectedRoute>
                                 <BattlePage />
                             </ProtectedRoute>
                         }
+                    />
+                    {/* Optional: Redirect /battle to landing or show room selection */}
+                    <Route
+                        path="/battle"
+                        element={<Navigate to="/landing" />}
                     />
                 </Routes>
             </AnimatePresence>

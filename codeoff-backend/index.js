@@ -13,15 +13,23 @@ const JUDGE0_HOST = "judge0-ce.p.rapidapi.com";
 const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY;
 
 app.post("/run", async (req, res) => {
-  const { source_code, language_id } = req.body;
+  const { source_code, language_id, stdin } = req.body;
+  
+  console.log("🔍 Backend received:", { 
+    source_code: source_code?.substring(0, 100) + "...", 
+    stdin: stdin, 
+    stdin_length: stdin?.length,
+    language_id 
+  });
 
   try {
-    // 1. Submit code
+    // 1. Submit code with stdin
     const submissionRes = await axios.post(
       `https://${JUDGE0_HOST}/submissions?base64_encoded=false&wait=false`,
       {
         source_code,
         language_id,
+        stdin: stdin || "", // This is crucial
       },
       {
         headers: {
@@ -34,7 +42,7 @@ app.post("/run", async (req, res) => {
 
     const { token } = submissionRes.data;
 
-    // 2. Poll once after delay (wrap polling in its own function)
+    // 2. Poll for result
     setTimeout(() => {
       axios
         .get(`https://${JUDGE0_HOST}/submissions/${token}?base64_encoded=false`, {
@@ -45,16 +53,16 @@ app.post("/run", async (req, res) => {
         })
         .then((resultRes) => {
           const result = resultRes.data;
-          const output =
-            result.stdout || result.stderr || result.compile_output || "No output.";
-          console.log("✅ Sending back:", output);
+          console.log("🔍 Judge0 returned:", result);
+          
+          const output = result.stdout || result.stderr || result.compile_output || "No output.";
           res.json({ output: output.trim() });
         })
         .catch((pollError) => {
           console.error("❌ Polling error:", pollError);
           res.status(500).json({ error: "Failed to fetch execution result" });
         });
-    }, 2000); 
+    }, 2000);
   } catch (err) {
     console.error("❌ Submission error:", err);
     res.status(500).json({ error: "Code submission failed" });
@@ -64,5 +72,5 @@ app.post("/run", async (req, res) => {
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
-    console.log(`CodeOff backend running on port ${PORT}`);
+  console.log(`CodeOff backend running on port ${PORT}`);
 });

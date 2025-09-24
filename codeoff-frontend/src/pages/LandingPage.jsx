@@ -29,7 +29,8 @@ export default function LandingPage() {
             const room = snap.val();
             if (room?.players?.[user.uid] && !room.entered) {
                 dbSet(ref(database, `rooms/${room.roomId}/entered`), true);
-                navigate("/battle", {state: {roomId: room.roomId}});
+                // Fixed: Navigate with roomId in URL path instead of state
+                navigate(`/battle/${room.roomId}`);
             }
         });
 
@@ -48,13 +49,19 @@ export default function LandingPage() {
         joinQueue(
             ({roomId, opponent}) => {
                 searching = false;
-                navigate("/battle", {state: {roomId, opponent}});
+                console.log("Random match found, navigating to:", `/battle/${roomId}`);
+                // Fixed: Navigate with roomId in URL path
+                navigate(`/battle/${roomId}`);
             },
             (seconds) => {
                 console.log("⏳ Searching…", seconds, "seconds");
             },
             ({roomId, opponent}) => {
-                if (searching) navigate("/battle", {state: {roomId, opponent}});
+                if (searching) {
+                    console.log("Queue timeout, navigating to:", `/battle/${roomId}`);
+                    // Fixed: Navigate with roomId in URL path
+                    navigate(`/battle/${roomId}`);
+                }
             }
         );
     };
@@ -71,14 +78,20 @@ export default function LandingPage() {
     };
 
     const handleAcceptChallenge = async (challenge) => {
-        const {challengerId, challengerEmail} = challenge;
-        const roomId = await acceptChallenge(challengerId, user.uid);
-        navigate("/battle", {
-            state: {
-                roomId,
-                opponent: {uid: challengerId, email: challengerEmail},
-            },
-        });
+        try {
+            const {challengerId, challengerEmail} = challenge;
+            console.log("Accepting challenge from:", challengerEmail);
+            
+            const roomId = await acceptChallenge(challengerId, user.uid);
+            console.log("Challenge accepted, room created:", roomId);
+            console.log("Navigating to:", `/battle/${roomId}`);
+            
+            // Fixed: Navigate with roomId in URL path instead of state
+            navigate(`/battle/${roomId}`);
+        } catch (error) {
+            console.error("Error accepting challenge:", error);
+            alert("Failed to accept challenge. Please try again.");
+        }
     };
 
     const handleLogout = async () => {
