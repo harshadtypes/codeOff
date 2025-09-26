@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
 import Editor from "@monaco-editor/react";
-import { runCode, LANGUAGES } from "../api/codeoffApi";
+import { runCode, LANGUAGES, AudioChat } from "../api/codeoffApi";
 import { useParams } from "react-router-dom";
 import { getAuth, onAuthStateChanged } from "firebase/auth";
 import {
@@ -16,6 +16,15 @@ import {
 } from "firebase/database";
 
 export default function BattlePage() {
+  // --- Audio Chat Control States ---
+  const [audioChat, setAudioChat] = useState(null);
+  const [isAudioConnected, setIsAudioConnected] = useState(false);
+  const [isMicMuted, setIsMicMuted] = useState(false);
+  const [audioConnectionState, setAudioConnectionState] =
+    useState("disconnected");
+  const [remoteAudioElement, setRemoteAudioElement] = useState(null);
+  const [isSpeakerOn, setIsSpeakerOn] = useState(true);
+
   const [timer, setTimer] = useState(900); // 15 minutes
   const params = useParams();
   const roomId = params.roomId || params.id; // Handle both :roomId and :id params
@@ -69,8 +78,12 @@ export default function BattlePage() {
   const [oppLanguage, setOppLanguage] = useState(71); // Opponent's language
 
   // Get current language info
-  const currentLanguage = LANGUAGES.find(lang => lang.id === selectedLanguage) || LANGUAGES.find(lang => lang.id === 71);
-  const oppCurrentLanguage = LANGUAGES.find(lang => lang.id === oppLanguage) || LANGUAGES.find(lang => lang.id === 71);
+  const currentLanguage =
+    LANGUAGES.find((lang) => lang.id === selectedLanguage) ||
+    LANGUAGES.find((lang) => lang.id === 71);
+  const oppCurrentLanguage =
+    LANGUAGES.find((lang) => lang.id === oppLanguage) ||
+    LANGUAGES.find((lang) => lang.id === 71);
 
   // Load language from localStorage on component mount
   useEffect(() => {
@@ -85,10 +98,13 @@ export default function BattlePage() {
     setSelectedLanguage(languageId);
     setLS("selectedLanguage", languageId.toString());
     setShowLanguageDropdown(false);
-    
+
     // Sync language change to Firebase
     if (myUid && finalRoomId) {
-      const submissionRef = ref(db, `rooms/${finalRoomId}/submissions/${myUid}`);
+      const submissionRef = ref(
+        db,
+        `rooms/${finalRoomId}/submissions/${myUid}`
+      );
       set(submissionRef, {
         code: myCode,
         input: myInput,
@@ -102,34 +118,34 @@ export default function BattlePage() {
   // Get Monaco editor language from file extension
   const getMonacoLanguage = (extension) => {
     const languageMap = {
-      'py': 'python',
-      'js': 'javascript',
-      'ts': 'typescript',
-      'cpp': 'cpp',
-      'c': 'c',
-      'java': 'java',
-      'cs': 'csharp',
-      'php': 'php',
-      'rb': 'ruby',
-      'go': 'go',
-      'rs': 'rust',
-      'kt': 'kotlin',
-      'swift': 'swift',
-      'scala': 'scala',
-      'r': 'r',
-      'sql': 'sql',
-      'sh': 'shell',
-      'pl': 'perl',
-      'lua': 'lua',
-      'hs': 'haskell',
-      'ml': 'fsharp',
-      'fs': 'fsharp',
-      'clj': 'clojure',
-      'pas': 'pascal',
-      'asm': 'asm',
-      'vb': 'vb'
+      py: "python",
+      js: "javascript",
+      ts: "typescript",
+      cpp: "cpp",
+      c: "c",
+      java: "java",
+      cs: "csharp",
+      php: "php",
+      rb: "ruby",
+      go: "go",
+      rs: "rust",
+      kt: "kotlin",
+      swift: "swift",
+      scala: "scala",
+      r: "r",
+      sql: "sql",
+      sh: "shell",
+      pl: "perl",
+      lua: "lua",
+      hs: "haskell",
+      ml: "fsharp",
+      fs: "fsharp",
+      clj: "clojure",
+      pas: "pascal",
+      asm: "asm",
+      vb: "vb",
     };
-    return languageMap[extension] || 'text';
+    return languageMap[extension] || "text";
   };
 
   // Timer logic
@@ -378,6 +394,99 @@ export default function BattlePage() {
     }
   }, [db, myCode, myInput, selectedLanguage, myUid, finalRoomId]);
 
+  // --- Audio Chat Initialization/Auto-connect ---
+  useEffect(() => {
+    if (finalRoomId && myUid && oppUid && !audioChat && db) {
+      console.log("🎵 Initializing audio chat");
+      const chat = new AudioChat(db, finalRoomId, myUid);
+
+      // Enhanced connection state callback
+      chat.onConnectionStateChange = (state) => {
+        console.log("🔗 Connection state changed to:", state);
+        setAudioConnectionState(state);
+
+        // Enable buttons for connected, connecting, or when we have streams
+        const shouldEnable =
+          state === "connected" || state === "connecting" || chat.remoteStream;
+        setIsAudioConnected(shouldEnable);
+
+        setDebugConnectionInfo({
+          connectionState: state,
+          hasRemoteStream: !!chat.remoteStream,
+          hasLocalStream: !!chat.localStream,
+          timestamp: new Date().toLocaleTimeString(),
+        });
+      };
+
+      // Force enable buttons when remote stream received
+      chat.onRemoteStream = (stream) => {
+        console.log("🔊 Remote audio stream received - forcing button enable");
+        let audio = remoteAudioElement;
+        if (!audio) {
+          audio = new Audio();
+          audio.autoplay = true;
+          setRemoteAudioElement(audio);
+        }
+        audio.srcObject = stream;
+        audio.muted = !isSpeakerOn;
+
+        // Force enable audio controls when we have remote stream
+        setIsAudioConnected(true);
+        setAudioConnectionState("connected");
+      };
+
+      chat.onError = (error) => {
+        console.error("❌ Audio chat error:", error);
+        setMyError("Audio error: " + error);
+      };
+
+      setAudioChat(chat);
+    }
+  }, [
+    finalRoomId,
+    myUid,
+    oppUid,
+    db,
+    remoteAudioElement,
+    isSpeakerOn,
+    audioChat,
+  ]);
+
+  // AUTO-CONNECT audio call once both users present
+  useEffect(() => {
+    if (
+      audioChat &&
+      myUid &&
+      oppUid &&
+      !isAudioConnected &&
+      audioConnectionState === "disconnected"
+    ) {
+      // Initiator is lexicographically lowest UID
+      const isInitiator = myUid < oppUid;
+      audioChat.startCall(isInitiator);
+    }
+    // eslint-disable-next-line
+  }, [audioChat, myUid, oppUid, isAudioConnected, audioConnectionState]);
+
+  // Speaker toggle handler
+  const handleSpeakerToggle = () => {
+    setIsSpeakerOn((prev) => {
+      const next = !prev;
+      if (remoteAudioElement) remoteAudioElement.muted = !next;
+      return next;
+    });
+  };
+
+  // Microphone toggle handler
+  const handleMicToggle = () => {
+    if (audioChat) {
+      const muted = audioChat.toggleMute();
+      setIsMicMuted(muted);
+    }
+  };
+
+  const [debugConnectionInfo, setDebugConnectionInfo] = useState({});
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-950 via-gray-900 to-black text-white p-4 space-y-4 font-mono">
       {/* Top bar */}
@@ -389,17 +498,83 @@ export default function BattlePage() {
           </span>
         </div>
         <div className="flex gap-3 justify-center">
-          {["🎙️", "📈", "🤝 Draw", "🏳️ Resign"].map((btn, i) => (
+          {/* Speaker Toggle */}
+          <button
+            onClick={handleSpeakerToggle}
+            disabled={!isAudioConnected}
+            className={`px-3 py-1 rounded ${
+              isSpeakerOn
+                ? "bg-blue-600 hover:bg-blue-700 hover:shadow-blue-400/60"
+                : "bg-gray-700 hover:bg-gray-800"
+            } hover:scale-105 hover:shadow-lg transition-all ${
+              !isAudioConnected
+                ? "opacity-50 cursor-not-allowed"
+                : "cursor-pointer"
+            }`}
+            title={isSpeakerOn ? "Turn Speaker OFF" : "Turn Speaker ON"}
+          >
+            {isSpeakerOn ? "🔊" : "🔊❌"}
+          </button>
+          {/* Microphone Toggle */}
+          <button
+            onClick={handleMicToggle}
+            disabled={!isAudioConnected}
+            className={`px-3 py-1 rounded ${
+              isMicMuted
+                ? "bg-red-600 hover:bg-red-700 hover:shadow-red-400/60"
+                : "bg-green-600 hover:bg-green-700 hover:shadow-green-400/60"
+            } hover:scale-105 hover:shadow-lg transition-all ${
+              !isAudioConnected
+                ? "opacity-50 cursor-not-allowed"
+                : "cursor-pointer"
+            }`}
+            title={isMicMuted ? "Unmute Microphone" : "Mute Microphone"}
+          >
+            {isMicMuted ? "🎤❌" : "🎤"}
+          </button>
+          {/* Other Control Buttons */}
+          {["🤝 Draw", "🏳️ Resign"].map((btn, i) => (
             <button
               key={i}
-              className="px-3 py-1 rounded bg-gray-800 hover:scale-105 hover:shadow-lg transition-all hover:shadow-cyan-400/60"
+              className="px-3 py-1 rounded bg-gray-800 hover:scale-105 hover:shadow-lg transition-all hover:shadow-cyan-400/60 cursor-pointer"
             >
               {btn}
             </button>
           ))}
         </div>
       </div>
-
+      {/* Audio Status Indicator */}
+      <div className="text-center">
+        <div
+          className={`inline-flex items-center space-x-2 px-4 py-2 rounded-lg transition-all ${
+            isAudioConnected
+              ? "bg-green-900 border border-green-600"
+              : audioConnectionState === "connecting"
+              ? "bg-yellow-900 border border-yellow-600"
+              : "bg-gray-800 border border-gray-600"
+          }`}
+        >
+          <div
+            className={`w-2 h-2 rounded-full ${
+              isAudioConnected
+                ? "bg-green-400 animate-pulse"
+                : audioConnectionState === "connecting"
+                ? "bg-yellow-400 animate-pulse"
+                : "bg-gray-400"
+            }`}
+          />
+          <span className="text-sm">
+            Audio:{" "}
+            {isAudioConnected
+              ? "Connected"
+              : audioConnectionState === "connecting"
+              ? "Connecting..."
+              : "Disconnected"}
+            {isSpeakerOn ? "" : " (Speaker OFF)"}
+            {isMicMuted && isAudioConnected ? " (Mic Muted)" : ""}
+          </span>
+        </div>
+      </div>
       {/* Players */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {[myName, oppName].map((player, i) => (
@@ -430,7 +605,6 @@ export default function BattlePage() {
           </motion.div>
         ))}
       </div>
-
       {/* Timer */}
       <motion.div
         animate={{
@@ -442,7 +616,6 @@ export default function BattlePage() {
       >
         ⏱ Time Left: {formatTime(timer)}
       </motion.div>
-
       {/* Main layout */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Problem */}
@@ -473,26 +646,35 @@ export default function BattlePage() {
           >
             <div className="flex justify-between items-center mb-2">
               <h3 className="font-bold text-cyan-300">{myName} (You)</h3>
-              
+
               {/* Language Selector and Run Button */}
               <div className="flex items-center space-x-2 relative">
                 {/* Language Dropdown */}
                 <div className="relative">
                   <button
-                    onClick={() => setShowLanguageDropdown(!showLanguageDropdown)}
+                    onClick={() =>
+                      setShowLanguageDropdown(!showLanguageDropdown)
+                    }
                     className="flex items-center space-x-2 px-3 py-1 bg-gray-700 hover:bg-gray-600 rounded border border-gray-600 text-xs transition-colors"
                   >
-                    <span>{currentLanguage.name.split(' ')[0]}</span>
-                    <svg 
-                      className={`w-3 h-3 transition-transform ${showLanguageDropdown ? 'rotate-180' : ''}`} 
-                      fill="none" 
-                      stroke="currentColor" 
+                    <span>{currentLanguage.name.split(" ")[0]}</span>
+                    <svg
+                      className={`w-3 h-3 transition-transform ${
+                        showLanguageDropdown ? "rotate-180" : ""
+                      }`}
+                      fill="none"
+                      stroke="currentColor"
                       viewBox="0 0 24 24"
                     >
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth="2"
+                        d="M19 9l-7 7-7-7"
+                      />
                     </svg>
                   </button>
-                  
+
                   {showLanguageDropdown && (
                     <div className="absolute top-full right-0 mt-1 w-72 max-h-80 overflow-y-auto bg-gray-800 border border-gray-600 rounded shadow-lg z-50">
                       {LANGUAGES.map((language) => (
@@ -500,7 +682,9 @@ export default function BattlePage() {
                           key={language.id}
                           onClick={() => handleLanguageChange(language.id)}
                           className={`w-full text-left px-4 py-2 text-xs hover:bg-gray-700 transition-colors ${
-                            selectedLanguage === language.id ? 'bg-blue-600 text-white' : 'text-gray-300'
+                            selectedLanguage === language.id
+                              ? "bg-blue-600 text-white"
+                              : "text-gray-300"
                           }`}
                         >
                           {language.name}
@@ -562,7 +746,7 @@ export default function BattlePage() {
               <div className="flex items-center space-x-2">
                 {/* Show opponent's language */}
                 <span className="px-2 py-1 bg-gray-700 rounded text-xs text-gray-300">
-                  {oppCurrentLanguage.name.split(' ')[0]}
+                  {oppCurrentLanguage.name.split(" ")[0]}
                 </span>
                 <button
                   disabled
@@ -606,7 +790,6 @@ export default function BattlePage() {
           </motion.div>
         </div>
       </div>
-
       {/* Debug info (remove in production) */}
       {process.env.NODE_ENV === "development" && (
         <div className="bg-gray-900 p-4 rounded text-xs space-y-1">
@@ -622,8 +805,23 @@ export default function BattlePage() {
           <p>myName: {myName}</p>
           <p>oppName: {oppName}</p>
           <p>User email: {myEmail}</p>
-          <p>My Language: {currentLanguage.name} (ID: {selectedLanguage})</p>
-          <p>Opponent Language: {oppCurrentLanguage.name} (ID: {oppLanguage})</p>
+          <p>
+            My Language: {currentLanguage.name} (ID: {selectedLanguage})
+          </p>
+          <p>
+            Opponent Language: {oppCurrentLanguage.name} (ID: {oppLanguage})
+          </p>
+        </div>
+      )}
+      {process.env.NODE_ENV === "development" && (
+        <div className="bg-gray-900 p-4 rounded text-xs space-y-1">
+          <p>
+            <strong>Debug Info:</strong>
+          </p>
+          {/* ... your existing debug info ... */}
+          <p>Audio Connection State: {audioConnectionState}</p>
+          <p>Is Audio Connected: {isAudioConnected.toString()}</p>
+          <p>Debug Connection Info: {JSON.stringify(debugConnectionInfo)}</p>
         </div>
       )}
     </div>
