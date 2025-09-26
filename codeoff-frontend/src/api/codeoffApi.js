@@ -1,6 +1,6 @@
 import { ref, push, onValue, remove } from "firebase/database";
 
-// Judge0 supported languages (unchanged)
+// Judge0 languages (unchanged)
 export const LANGUAGES = [
   { id: 45, name: "Assembly (NASM 2.14.02)", extension: "asm" },
   { id: 46, name: "Bash (5.0.0)", extension: "sh" },
@@ -97,8 +97,10 @@ export class AudioChat {
     this.isConnected = false;
     this.isMuted = false;
     this.isCaller = false;
-    this.processedMessages = new Set(); // Track processed signaling messages
-    this.signalingListener = null; // Store listener reference
+    this.processedMessages = new Set();
+    this.signalingListener = null;
+    this.hasReceivedOffer = false; // Track if we've received an offer
+    this.hasCreatedOffer = false; // Track if we've created an offer
     
     // Callbacks
     this.onConnectionStateChange = null;
@@ -112,6 +114,7 @@ export class AudioChat {
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
+          autoGainControl: true,
           sampleRate: 44100
         },
         video: false
@@ -132,14 +135,22 @@ export class AudioChat {
     // Add local stream tracks
     if (this.localStream) {
       this.localStream.getTracks().forEach(track => {
+        console.log("🎵 Adding local track:", track.kind);
         this.peerConnection.addTrack(track, this.localStream);
       });
     }
 
     // Handle remote stream
     this.peerConnection.ontrack = (event) => {
-      console.log("🔊 Received remote stream");
+      console.log("🔊 Received remote track:", event.track.kind);
       this.remoteStream = event.streams[0];
+      
+      // Force connection state update
+      this.isConnected = true;
+      if (this.onConnectionStateChange) {
+        this.onConnectionStateChange("connected");
+      }
+      
       if (this.onRemoteStream) {
         this.onRemoteStream(this.remoteStream);
       }
@@ -150,22 +161,44 @@ export class AudioChat {
       if (event.candidate) {
         console.log("🧊 Sending ICE candidate");
         this.sendICECandidate(event.candidate);
+      } else {
+        console.log("🧊 All ICE candidates sent");
       }
     };
 
-    // Handle connection state changes
+    // Connection state monitoring
     this.peerConnection.onconnectionstatechange = () => {
-      console.log("🔗 Connection state:", this.peerConnection.connectionState);
-      this.isConnected = this.peerConnection.connectionState === 'connected';
+      const state = this.peerConnection.connectionState;
+      console.log("🔗 Connection state:", state);
+      
+      if (state === 'connected') {
+        this.isConnected = true;
+      } else if (state === 'failed' || state === 'disconnected' || state === 'closed') {
+        this.isConnected = false;
+      }
+      
       if (this.onConnectionStateChange) {
-        this.onConnectionStateChange(this.peerConnection.connectionState);
+        this.onConnectionStateChange(state);
+      }
+    };
+
+    // ICE connection state
+    this.peerConnection.oniceconnectionstatechange = () => {
+      const iceState = this.peerConnection.iceConnectionState;
+      console.log("🧊 ICE connection state:", iceState);
+      
+      if (iceState === 'connected' || iceState === 'completed') {
+        this.isConnected = true;
+        if (this.onConnectionStateChange) {
+          this.onConnectionStateChange("connected");
+        }
       }
     };
   }
 
   async startCall(isInitiator = false) {
     this.isCaller = isInitiator;
-    console.log(`🚀 Starting call as ${isInitiator ? 'caller' : 'answerer'}`);
+    console.log(`🚀 Starting call as ${isInitiator ? 'CALLER' : 'ANSWERER'}`);
     
     if (!this.localStream) {
       const initialized = await this.initialize();
@@ -174,11 +207,22 @@ export class AudioChat {
 
     await this.setupPeerConnection();
 
-    // Start listening for signaling messages first
+    // Clear any existing signaling data first
+    if (isInitiator) {
+      const signalingRef = ref(this.db, `rooms/${this.roomId}/signaling`);
+      await remove(signalingRef);
+      console.log("🧹 Cleared old signaling data");
+    }
+
+    // Start listening for signaling messages
     this.listenForSignaling();
 
+    // Only caller creates initial offer
     if (isInitiator) {
-      await this.createOffer();
+      // Small delay to ensure listener is active
+      setTimeout(() => {
+        this.createOffer();
+      }, 1000);
     }
     
     return true;
@@ -186,15 +230,27 @@ export class AudioChat {
 
   async createOffer() {
     try {
+      if (this.hasCreatedOffer) {
+        console.log("⚠️ Already created offer, skipping");
+        return;
+      }
+
       console.log("📞 Creating offer...");
-      const offer = await this.peerConnection.createOffer();
+      const offer = await this.peerConnection.createOffer({
+        offerToReceiveAudio: true,
+        offerToReceiveVideo: false
+      });
+      
       await this.peerConnection.setLocalDescription(offer);
+      this.hasCreatedOffer = true;
       
       await this.sendSignalingMessage({
         type: 'offer',
         offer: offer,
         from: this.myUid
       });
+
+      console.log("📞 Offer sent");
     } catch (error) {
       console.error("❌ Error creating offer:", error);
       if (this.onError) this.onError("Failed to create call: " + error.message);
@@ -203,10 +259,27 @@ export class AudioChat {
 
   async handleOffer(offerData) {
     try {
+      if (this.hasReceivedOffer) {
+        console.log("⚠️ Already received offer, skipping");
+        return;
+      }
+
       console.log("📱 Handling incoming offer");
-      await this.peerConnection.setRemoteDescription(new RTCSessionDescription(offerData.offer));
       
-      const answer = await this.peerConnection.createAnswer();
+      // Only non-callers should handle offers
+      if (this.isCaller) {
+        console.log("⚠️ Ignoring offer as we are the caller");
+        return;
+      }
+
+      await this.peerConnection.setRemoteDescription(new RTCSessionDescription(offerData.offer));
+      this.hasReceivedOffer = true;
+      
+      const answer = await this.peerConnection.createAnswer({
+        offerToReceiveAudio: true,
+        offerToReceiveVideo: false
+      });
+      
       await this.peerConnection.setLocalDescription(answer);
       
       await this.sendSignalingMessage({
@@ -214,6 +287,8 @@ export class AudioChat {
         answer: answer,
         from: this.myUid
       });
+
+      console.log("📱 Answer sent");
     } catch (error) {
       console.error("❌ Error handling offer:", error);
       if (this.onError) this.onError("Failed to answer call: " + error.message);
@@ -223,7 +298,22 @@ export class AudioChat {
   async handleAnswer(answerData) {
     try {
       console.log("✅ Handling answer");
+      
+      // Only callers should handle answers
+      if (!this.isCaller) {
+        console.log("⚠️ Ignoring answer as we are not the caller");
+        return;
+      }
+
+      // Check if we're in the right state
+      if (this.peerConnection.signalingState !== "have-local-offer") {
+        console.log(`⚠️ Wrong state for answer: ${this.peerConnection.signalingState}`);
+        return;
+      }
+
       await this.peerConnection.setRemoteDescription(new RTCSessionDescription(answerData.answer));
+      console.log("✅ Answer processed successfully");
+      
     } catch (error) {
       console.error("❌ Error handling answer:", error);
       if (this.onError) this.onError("Failed to complete call: " + error.message);
@@ -232,15 +322,23 @@ export class AudioChat {
 
   async handleICECandidate(candidateData) {
     try {
-      // Validate ICE candidate before adding
       const candidate = candidateData.candidate;
+      
+      // Validate ICE candidate
       if (!candidate || (!candidate.sdpMid && candidate.sdpMLineIndex === null)) {
-        console.log("⚠️ Skipping invalid ICE candidate:", candidate);
+        console.log("⚠️ Skipping invalid ICE candidate");
         return;
       }
 
-      console.log("🧊 Adding ICE candidate");
-      await this.peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+      // Wait for remote description to be set
+      if (this.peerConnection.remoteDescription) {
+        await this.peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+        console.log("🧊 ICE candidate added");
+      } else {
+        console.log("⚠️ Waiting for remote description before adding ICE candidate");
+        // Could queue candidates here if needed
+      }
+      
     } catch (error) {
       console.error("❌ Error adding ICE candidate:", error);
     }
@@ -250,10 +348,11 @@ export class AudioChat {
     const signalingRef = ref(this.db, `rooms/${this.roomId}/signaling`);
     const messageWithId = {
       ...message,
-      id: Date.now() + '-' + Math.random().toString(36).substr(2, 9), // Unique ID
+      id: Date.now() + '-' + Math.random().toString(36).substr(2, 9),
       timestamp: Date.now()
     };
     await push(signalingRef, messageWithId);
+    console.log("📤 Sent signaling message:", message.type);
   }
 
   async sendICECandidate(candidate) {
@@ -275,33 +374,32 @@ export class AudioChat {
       if (snapshot.exists()) {
         const messages = snapshot.val();
         Object.values(messages).forEach(message => {
-          // Skip messages from myself and already processed messages
+          // Process new messages from other user
           if (message.from !== this.myUid && message.id && !this.processedMessages.has(message.id)) {
             this.processedMessages.add(message.id);
+            console.log("📥 Processing signaling message:", message.type);
             this.handleSignalingMessage(message);
           }
         });
       }
     });
+
+    console.log("👂 Started listening for signaling messages");
   }
 
   async handleSignalingMessage(message) {
-    console.log("📨 Processing signaling message:", message.type);
-    
     switch (message.type) {
       case 'offer':
-        if (!this.isCaller) {
-          await this.handleOffer(message);
-        }
+        await this.handleOffer(message);
         break;
       case 'answer':
-        if (this.isCaller) {
-          await this.handleAnswer(message);
-        }
+        await this.handleAnswer(message);
         break;
       case 'ice-candidate':
         await this.handleICECandidate(message);
         break;
+      default:
+        console.log("❓ Unknown message type:", message.type);
     }
   }
 
@@ -311,7 +409,7 @@ export class AudioChat {
         track.enabled = this.isMuted; // Enable if currently muted
       });
       this.isMuted = !this.isMuted;
-      console.log(`🎤 Microphone ${this.isMuted ? 'muted' : 'unmuted'}`);
+      console.log(`🎤 Microphone ${this.isMuted ? 'MUTED' : 'UNMUTED'}`);
       return this.isMuted;
     }
     return false;
@@ -334,16 +432,19 @@ export class AudioChat {
 
     // Stop local stream
     if (this.localStream) {
-      this.localStream.getTracks().forEach(track => track.stop());
+      this.localStream.getTracks().forEach(track => {
+        track.stop();
+        console.log("🛑 Stopped local track:", track.kind);
+      });
       this.localStream = null;
     }
 
-    // Clear remote stream
+    // Clear state
     this.remoteStream = null;
     this.isConnected = false;
     this.isMuted = false;
-
-    // Clear processed messages
+    this.hasReceivedOffer = false;
+    this.hasCreatedOffer = false;
     this.processedMessages.clear();
 
     // Clear signaling data
