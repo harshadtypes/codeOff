@@ -418,17 +418,38 @@ export default function BattlePage() {
         });
       };
 
-      // Force enable buttons when remote stream received
       chat.onRemoteStream = (stream) => {
         console.log("🔊 Remote audio stream received - forcing button enable");
+        console.log("🔊 Remote stream details:", {
+          id: stream.id,
+          active: stream.active,
+          audioTracks: stream.getAudioTracks().length,
+          audioTrackEnabled: stream.getAudioTracks()[0]?.enabled,
+        });
+
         let audio = remoteAudioElement;
         if (!audio) {
           audio = new Audio();
           audio.autoplay = true;
+          audio.controls = true; // Add controls for debugging
           setRemoteAudioElement(audio);
         }
+
         audio.srcObject = stream;
         audio.muted = !isSpeakerOn;
+
+        // Debug: Log when audio starts playing
+        audio.onloadedmetadata = () => {
+          console.log("🔊 Audio metadata loaded");
+          audio
+            .play()
+            .then(() => {
+              console.log("🔊 Audio playback started");
+            })
+            .catch((err) => {
+              console.error("❌ Audio playback failed:", err);
+            });
+        };
 
         // Force enable audio controls when we have remote stream
         setIsAudioConnected(true);
@@ -487,8 +508,35 @@ export default function BattlePage() {
 
   const [debugConnectionInfo, setDebugConnectionInfo] = useState({});
 
+  // Add this useEffect for network testing
+  useEffect(() => {
+    if (audioChat && isAudioConnected) {
+      // Test if we can actually reach STUN servers
+      const testConnection = new RTCPeerConnection({
+        iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+      });
+
+      testConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+          console.log(
+            "✅ STUN server reachable, got candidate:",
+            event.candidate.type
+          );
+        }
+      };
+
+      testConnection.createDataChannel("test");
+      testConnection.createOffer().then((offer) => {
+        testConnection.setLocalDescription(offer);
+      });
+
+      setTimeout(() => testConnection.close(), 5000);
+    }
+  }, [audioChat, isAudioConnected]);
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-950 via-gray-900 to-black text-white p-4 space-y-4 font-mono">
+      
       {/* Top bar */}
       <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
         <div className="flex items-center gap-2">
@@ -575,6 +623,7 @@ export default function BattlePage() {
           </span>
         </div>
       </div>
+        
       {/* Players */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {[myName, oppName].map((player, i) => (
