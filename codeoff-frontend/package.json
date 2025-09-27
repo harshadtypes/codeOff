@@ -17,6 +17,7 @@
     "react-dom": "^19.1.0",
     "react-router-dom": "^6.30.1",
     "react-tsparticles": "^2.12.2",
+    "three": "^0.180.0",
     "tsparticles": "^3.9.1",
     "uuid": "^11.1.0"
   },

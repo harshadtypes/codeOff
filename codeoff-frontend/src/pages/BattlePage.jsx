@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
 import Editor from "@monaco-editor/react";
 import { runCode, LANGUAGES, AudioChat } from "../api/codeoffApi";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { getAuth, onAuthStateChanged } from "firebase/auth";
 import {
   getDatabase,
@@ -13,6 +13,7 @@ import {
   get,
   push,
   serverTimestamp,
+  remove,
 } from "firebase/database";
 
 export default function BattlePage() {
@@ -24,6 +25,8 @@ export default function BattlePage() {
     useState("disconnected");
   const [remoteAudioElement, setRemoteAudioElement] = useState(null);
   const [isSpeakerOn, setIsSpeakerOn] = useState(true);
+
+  const navigate = useNavigate();
 
   const [timer, setTimer] = useState(900); // 15 minutes
   const params = useParams();
@@ -394,9 +397,12 @@ export default function BattlePage() {
     }
   }, [db, myCode, myInput, selectedLanguage, myUid, finalRoomId]);
 
+  // Add this state to track if we're cleaning up
+  const [isCleaningUp, setIsCleaningUp] = useState(false);
+
   // --- Audio Chat Initialization/Auto-connect ---
   useEffect(() => {
-    if (finalRoomId && myUid && oppUid && !audioChat && db) {
+    if (finalRoomId && myUid && oppUid && !audioChat && db && !isCleaningUp) {
       console.log("🎵 Initializing audio chat");
       const chat = new AudioChat(db, finalRoomId, myUid);
 
@@ -534,9 +540,127 @@ export default function BattlePage() {
     }
   }, [audioChat, isAudioConnected]);
 
+  const handleEndBattle = async (action) => {
+    const actionText = action === "draw" ? "declare a draw" : "resign";
+    const confirmText = `Are you sure you want to ${actionText}? This will end the battle for both players.`;
+
+    if (!confirm(confirmText)) {
+      return;
+    }
+
+    try {
+      console.log(
+        `${action === "draw" ? "🤝" : "🏳️"} ${
+          actionText.charAt(0).toUpperCase() + actionText.slice(1)
+        }ing from battle...`
+      );
+
+      // 1. End audio call first and prevent reinitialization
+      if (audioChat) {
+        await audioChat.endCall();
+        setAudioChat(null);
+        setIsAudioConnected(false);
+        setAudioConnectionState("disconnected");
+      }
+
+      // 2. Set battle end status in Firebase for other player to see
+      if (finalRoomId && myUid) {
+        const statusData = {
+          ended: true,
+          endedBy: myUid,
+          endedAt: serverTimestamp(),
+          reason: action, // "draw" or "resign"
+          winner: action === "draw" ? "draw" : oppUid || "opponent",
+        };
+
+        await set(ref(db, `rooms/${finalRoomId}/status`), statusData);
+        console.log(`📢 Battle ${action} status sent to opponent`);
+
+        // 3. Clean up room data immediately (no delay needed)
+        await cleanupRoom(finalRoomId);
+
+        // 4. Navigate back to landing page
+        console.log("🏠 Redirecting to landing page...");
+        navigate("/landing");
+      } else {
+        // If no room data, just navigate back
+        navigate("/landing");
+      }
+    } catch (error) {
+      console.error(`❌ Error during ${action}:`, error);
+      // Even if cleanup fails, still navigate back
+      navigate("/landing");
+    }
+  };
+
+  const cleanupRoom = async (roomId) => {
+    try {
+      console.log("🧹 Cleaning up room data...");
+      setIsCleaningUp(true); // Prevent audio reinitialization
+
+      // Remove all room-related data
+      const roomRef = ref(db, `rooms/${roomId}`);
+      await remove(roomRef);
+
+      console.log("✅ Room data cleaned up successfully");
+    } catch (error) {
+      console.error("❌ Error cleaning up room:", error);
+    } finally {
+      setIsCleaningUp(false);
+    }
+  };
+
+  // Battle end detection with proper cleanup
+  useEffect(() => {
+    if (!finalRoomId) return;
+
+    // Listen for battle end status (draw/resign)
+    const statusRef = ref(db, `rooms/${finalRoomId}/status`);
+    const unsubscribe = onValue(statusRef, async (snapshot) => {
+      if (snapshot.exists()) {
+        const status = snapshot.val();
+
+        if (status.ended && status.endedBy !== myUid) {
+          // Opponent ended the battle
+          const action = status.reason;
+
+          // Stop listening immediately to prevent repeated alerts
+          unsubscribe();
+
+          console.log(
+            `${action === "draw" ? "🤝" : "🏳️"} Opponent ${
+              action === "draw" ? "declared draw" : "resigned"
+            }`
+          );
+
+          // End audio call
+          if (audioChat) {
+            await audioChat.endCall();
+            setAudioChat(null);
+            setIsAudioConnected(false);
+            setAudioConnectionState("disconnected");
+          }
+
+          // Show appropriate message
+          const message =
+            action === "draw"
+              ? `${oppName} declared a draw. Battle ended!`
+              : `${oppName} resigned. You win!`;
+
+          alert(message);
+
+          // Navigate immediately without delay
+          console.log("🏠 Redirecting to landing page...");
+          navigate("/landing");
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, [finalRoomId, myUid, oppName, navigate, audioChat]);
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-950 via-gray-900 to-black text-white p-4 space-y-4 font-mono">
-      
       {/* Top bar */}
       <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
         <div className="flex items-center gap-2">
@@ -581,14 +705,21 @@ export default function BattlePage() {
             {isMicMuted ? "🎤❌" : "🎤"}
           </button>
           {/* Other Control Buttons */}
-          {["🤝 Draw", "🏳️ Resign"].map((btn, i) => (
-            <button
-              key={i}
-              className="px-3 py-1 rounded bg-gray-800 hover:scale-105 hover:shadow-lg transition-all hover:shadow-cyan-400/60 cursor-pointer"
-            >
-              {btn}
-            </button>
-          ))}
+          {/* Replace your current Draw/Resign buttons with this: */}
+          <button
+            onClick={() => handleEndBattle("draw")}
+            className="px-3 py-1 rounded bg-yellow-600 hover:bg-yellow-700 hover:scale-105 hover:shadow-lg transition-all hover:shadow-yellow-400/60 cursor-pointer"
+            title="Declare draw and end the battle"
+          >
+            🤝 Draw
+          </button>
+          <button
+            onClick={() => handleEndBattle("resign")}
+            className="px-3 py-1 rounded bg-red-600 hover:bg-red-700 hover:scale-105 hover:shadow-lg transition-all hover:shadow-red-400/60 cursor-pointer"
+            title="Resign and end the battle"
+          >
+            🏳️ Resign
+          </button>
         </div>
       </div>
       {/* Audio Status Indicator */}
@@ -623,7 +754,7 @@ export default function BattlePage() {
           </span>
         </div>
       </div>
-        
+
       {/* Players */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {[myName, oppName].map((player, i) => (
