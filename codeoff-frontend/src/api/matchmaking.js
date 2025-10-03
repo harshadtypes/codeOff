@@ -31,7 +31,8 @@ export function joinQueue(onMatch, onTick, onTimeout) {
   }, 1000);
 
   const matcher = onChildAdded(ref(database, "queue/"), (snap) => {
-    const o = snap.val(); const key = snap.key;
+    const o = snap.val();
+    const key = snap.key;
     if (o.uid !== user.uid) {
       clearInterval(tickTimer);
       remove(entryRef);
@@ -47,58 +48,130 @@ export function joinQueue(onMatch, onTick, onTimeout) {
   };
 }
 
-export async function sendChallenge(username, challengerId, challengerEmail) {
-  try {
-    const usernameRef = ref(database, `usernames/${username}`);
-    const snapshot = await get(usernameRef);
+export async function sendChallenge(friendEmail) {
+  const user = auth.currentUser;
+  if (!user) throw new Error("Not authenticated");
 
-    if (!snapshot.exists()) {
-      throw new Error("❌ Username not found.");
+  try {
+    // Check if friend exists by email
+    const usersRef = ref(database, "users");
+    const usersSnapshot = await get(usersRef);
+    
+    if (!usersSnapshot.exists()) {
+      throw new Error("No users found");
     }
 
-    const friendUid = snapshot.val();
-    const challengeRef = ref(database, `challenges/${friendUid.uid}`);
+    let friendUid = null;
+    const users = usersSnapshot.val();
+    
+    // Find user by email
+    Object.keys(users).forEach(uid => {
+      if (users[uid].email === friendEmail) {
+        friendUid = uid;
+      }
+    });
+
+    if (!friendUid) {
+      // Try finding by username
+      const usernameRef = ref(database, `usernames/${friendEmail}`);
+      const usernameSnapshot = await get(usernameRef);
+      
+      if (usernameSnapshot.exists()) {
+        friendUid = usernameSnapshot.val().uid;
+      } else {
+        throw new Error("Friend not found");
+      }
+    }
+
+    // Send challenge
+    const challengeRef = ref(database, `challenges/${friendUid}/${user.uid}`);
     const challengeData = {
-      challengerId,
-      challengerEmail,
-      timestamp: Date.now()
+      from: user.email,
+      fromUid: user.uid,
+      fromUsername: user.displayName || user.email.split('@')[0],
+      timestamp: Date.now(),
+      status: "pending"
     };
 
     await dbSet(challengeRef, challengeData);
-    console.log("✅ Challenge sent to", username);
-  } catch (err) {
-    console.error("❌ sendChallenge error:", err.message);
-    throw err;
-  }  
+    console.log("✅ Challenge sent to", friendEmail);
+
+  } catch (error) {
+    console.error("❌ sendChallenge error:", error.message);
+    throw error;
+  }
 }
 
-// No changes needed here — still works
-export function listenForChallenges(userId, callback) {
-  const challengeRef = ref(database, `challenges/${userId}`);
+export function listenForChallenges(callback) {
+  const user = auth.currentUser;
+  if (!user) {
+    callback([]);
+    return () => {};
+  }
 
-  return onValue(challengeRef, (snapshot) => {
+  const challengesRef = ref(database, `challenges/${user.uid}`);
+  
+  return onValue(challengesRef, (snapshot) => {
+    const challenges = [];
+    
     if (snapshot.exists()) {
       const data = snapshot.val();
-      callback(data);
-      remove(challengeRef); // delete after it's read
+      Object.keys(data).forEach(challengerId => {
+        const challenge = data[challengerId];
+        if (challenge.status === "pending") {
+          challenges.push({
+            id: challengerId,
+            from: challenge.from,
+            fromUsername: challenge.fromUsername,
+            timestamp: challenge.timestamp
+          });
+        }
+      });
     }
+    
+    callback(challenges);
   });
 }
 
-// matchmaking.js
-export async function acceptChallenge(challengerId, opponentId) {
-  const roomId = uuid();
+export async function acceptChallenge(challengerId, challengerEmail) {
+  const user = auth.currentUser;
+  if (!user) throw new Error("Not authenticated");
 
-  // Set room with both users and their ready status = false
-  await dbSet(ref(database, `rooms/${roomId}`), {
-    roomId,
-    players: {
-      [challengerId]: { ready: false },
-      [opponentId]: { ready: false }
-    },
-    createdAt: Date.now()
-  });
+  try {
+    // Create room
+    const roomId = uuid();
+    
+    // Set room with both users
+    await dbSet(ref(database, `rooms/${roomId}`), {
+      roomId,
+      players: {
+        [challengerId]: { ready: false, email: challengerEmail },
+        [user.uid]: { ready: false, email: user.email }
+      },
+      createdAt: Date.now(),
+      status: "waiting"
+    });
 
-  return roomId;
+    // Remove the challenge
+    await remove(ref(database, `challenges/${user.uid}/${challengerId}`));
+    
+    console.log("✅ Challenge accepted, room created:", roomId);
+    return roomId;
+
+  } catch (error) {
+    console.error("❌ acceptChallenge error:", error.message);
+    throw error;
+  }
 }
 
+export async function declineChallenge(challengerId) {
+  const user = auth.currentUser;
+  if (!user) return;
+
+  try {
+    await remove(ref(database, `challenges/${user.uid}/${challengerId}`));
+    console.log("✅ Challenge declined");
+  } catch (error) {
+    console.error("❌ declineChallenge error:", error.message);
+  }
+}
