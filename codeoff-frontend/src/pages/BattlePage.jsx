@@ -803,17 +803,163 @@ export default function BattlePage() {
           whileHover={{ scale: 1.01 }}
           className="bg-gray-800 p-6 rounded-xl shadow-lg border border-gray-700 hover:border-purple-500 transition-all"
         >
-          <h2 className="text-xl font-bold mb-2 text-purple-400">
+          {/* Title and tags */}
+          <h2 className="font-extrabold text-lg mb-1">
             2353. Design a Food Rating System
           </h2>
-          <p className="text-sm text-gray-300 mb-4">
-            Design a food rating system that can do the following: Modify the
-            rating of a food...
+          <br />
+          {/* Problem description */}
+          <p className="mb-3">
+            Design a food rating system that can do the following:
           </p>
-          <ul className="list-disc list-inside text-gray-400 space-y-1">
-            <li>Modify rating of food</li>
-            <li>Return highest rated food of a cuisine</li>
-            <li>Break ties by lexicographically smaller name</li>
+          <ul className="list-disc ml-6 space-y-1 mb-5">
+            <li>Modify the rating of a food item listed in the system.</li>
+            <li>
+              Return the highest-rated food item for a type of cuisine in the
+              system.
+            </li>
+          </ul>
+          <p className="mb-1">
+            Implement the{" "}
+            <code className="font-mono bg-[#23272f] px-1 py-0.5 rounded text-[#fbbf24]">
+              FoodRatings
+            </code>{" "}
+            class:
+          </p>
+          {/* API methods */}
+          <pre className="bg-[#23272f] px-4 py-3 rounded mb-2 text-sm font-mono text-white whitespace-pre-wrap">
+            {`FoodRatings(string[] foods, string[] cuisines, int[] ratings)`}{" "}
+            <span className="text-cyan-300">
+              Initializes the system. The food items are described by{" "}
+              <b>foods</b>, <b>cuisines</b> and <b>ratings</b>, all of which
+              have a length of <b>n</b>.
+            </span>
+          </pre>
+          <ul className="ml-8 list-disc text-[15px] mb-2 space-y-1">
+            <li>
+              <span className="font-mono text-yellow-400">foods[i]</span> is the
+              name of the <b>i-th</b> food.
+            </li>
+            <li>
+              <span className="font-mono text-yellow-400">cuisines[i]</span> is
+              the type of cuisine of the <b>i-th</b> food.
+            </li>
+            <li>
+              <span className="font-mono text-yellow-400">ratings[i]</span> is
+              the initial rating of the <b>i-th</b> food.
+            </li>
+          </ul>
+          <pre className="bg-[#23272f] px-4 py-3 rounded mb-2 text-sm font-mono text-white whitespace-pre-wrap">
+            {`void changeRating(string food, int newRating)`}{" "}
+            <span className="text-cyan-300">
+              Changes the rating of the food item with the name <b>food</b>.
+            </span>
+          </pre>
+          <pre className="bg-[#23272f] px-4 py-3 rounded mb-2 text-sm font-mono text-white whitespace-pre-wrap">
+            {`string highestRated(string cuisine)`}{" "}
+            <span className="text-cyan-300">
+              Returns the name of the food item that has the highest rating for
+              the given type of <b>cuisine</b>. If there is a tie, return the
+              item with the lexicographically smaller name.
+            </span>
+          </pre>
+          {/* Note */}
+          <p className="text-gray-400 text-xs mt-1 mb-8">
+            <b>Note:</b> If <span className="font-mono text-yellow-400">X</span>{" "}
+            is lexicographically smaller than string{" "}
+            <span className="font-mono text-yellow-400">Y</span>, it comes
+            before <span className="font-mono text-yellow-400">Y</span> in
+            dictionary order.
+            <br />
+            That is, either <span className="font-mono text-yellow-400">
+              X
+            </span>{" "}
+            is a prefix of <span className="font-mono text-yellow-400">Y</span>,
+            or if <span className="font-mono text-yellow-400">i</span> is the
+            first position such that{" "}
+            <span className="font-mono text-yellow-400">X[i] != Y[i]</span>,
+            then <span className="font-mono text-yellow-400">X[i]</span> comes
+            before <span className="font-mono text-yellow-400">Y[i]</span> in
+            alphabetic order.
+          </p>
+          {/* Example 1 */}
+          <div className="font-bold text-[15px] text-yellow-400 my-2">
+            Example 1:
+          </div>
+          <div>
+            <div className="font-bold mb-1 text-blue-400">Input</div>
+            <pre className="bg-[#23272f] px-4 py-3 rounded mb-3 text-sm font-mono text-white overflow-x-auto whitespace-pre-wrap">
+              {`["FoodRatings", "highestRated", "changeRating", "highestRated", "changeRating", "highestRated"]
+[[["kimchi","sushi","moussaka","ramen","bulgogi"],["korean","japanese","greek","japanese","korean"],[9,12,8,15,14]],"korean","japanese","ramen",16,"japanese","sushi",16,"japanese"]`}
+            </pre>
+            <div className="font-bold mb-1 text-blue-400">Output</div>
+            <pre className="bg-[#23272f] px-4 py-3 rounded mb-3 text-sm font-mono text-white overflow-x-auto whitespace-pre-wrap">
+              {`[null,"kimchi","ramen",null,"sushi",null,"ramen"]`}
+            </pre>
+            <div className="mb-1 mt-3 font-semibold text-white">
+              Explanation:
+            </div>
+            <pre className="bg-[#23272f] px-4 py-3 rounded text-[13px] font-mono text-[#e0e7ef] whitespace-pre-wrap mb-6">
+              {`FoodRatings foodRatings = new FoodRatings(["kimchi", "sushi", "moussaka", "ramen", "bulgogi"], ["korean", "japanese", "greek", "japanese", "korean"], [9, 12, 8, 15, 14]);
+foodRatings.highestRated("korean"); // return "kimchi"
+foodRatings.highestRated("japanese"); // return "ramen"
+foodRatings.changeRating("sushi", 16); // sushi now has a rating of 16.
+foodRatings.highestRated("japanese"); // return "sushi"
+foodRatings.changeRating("ramen", 16); // ramen now has a rating of 16.
+foodRatings.highestRated("japanese"); // return "ramen"
+`}
+            </pre>
+          </div>
+          {/* Constraints */}
+          <div className="font-bold text-[15px] text-yellow-400 mb-1">
+            Constraints:
+          </div>
+          <ul className="list-disc ml-6 text-xs space-y-1">
+            <li>
+              <span className="font-mono text-yellow-400">
+                1 &lt;= foods.length == cuisines.length == ratings.length &lt;=
+                2 * 10⁴
+              </span>
+            </li>
+            <li>
+              <span className="font-mono text-yellow-400">
+                1 &lt;= foods[i].length, cuisines[i].length &lt;= 10
+              </span>
+            </li>
+            <li>
+              <span className="font-mono text-yellow-400">
+                1 &lt;= ratings[i] &lt;= 10⁸
+              </span>
+            </li>
+            <li>
+              <span className="font-mono text-yellow-400">
+                foods[i], cuisines[i]
+              </span>{" "}
+              consist of lowercase English letters.
+            </li>
+            <li>
+              All the strings in{" "}
+              <span className="font-mono text-yellow-400">foods</span> are
+              distinct.
+            </li>
+            <li>
+              <span className="font-mono text-yellow-400">food</span> will be
+              the name of a food item in the system across all calls to{" "}
+              <span className="font-mono text-yellow-400">changeRating</span>.
+            </li>
+            <li>
+              <span className="font-mono text-yellow-400">cuisine</span> will be
+              a type of cuisine of at least one food item in the system across
+              all calls to{" "}
+              <span className="font-mono text-yellow-400">highestRated</span>.
+            </li>
+            <li>
+              At most <span className="font-mono text-yellow-400">2 * 10⁴</span>{" "}
+              calls in total will be made to{" "}
+              <span className="font-mono text-yellow-400">changeRating</span>{" "}
+              and{" "}
+              <span className="font-mono text-yellow-400">highestRated</span>.
+            </li>
           </ul>
         </motion.div>
 
