@@ -10,7 +10,7 @@ const firebaseConfig = {
   messagingSenderId: "886298485858",
   appId: "1:886298485858:web:784ac54766c53027439d3b",
   measurementId: "G-6QLJPS9JLH",
-  databaseURL: "https://code-off-6a8f8-default-rtdb.asia-southeast1.firebasedatabase.app/"
+  databaseURL: "https://kodeoff-7f7b2-default-rtdb.asia-southeast1.firebasedatabase.app/"
 };
 
 const app = initializeApp(firebaseConfig);
